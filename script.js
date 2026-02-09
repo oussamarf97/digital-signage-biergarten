@@ -1,13 +1,57 @@
-// ==== KONFIGURATION ====
-const ICS_URL = "https://outlook.office365.com/owa/calendar/459e06915f20497b98e14dd8acc3693d@wela-suppen.de/fd3f98695c874fc58b0316b732d27f2412740084984941561009/calendar.ics";
-const ROOM_NAME = "Raum Biergarten";
-const REFRESH_SECONDS = 60;
+// URL zu deinem Outlook ICS-Kalender
+const icsUrl = "https://outlook.office365.com/owa/calendar/459e06915f20497b98e14dd8acc3693d@wela-suppen.de/fd3f98695c874fc58b0316b732d27f2412740084984941561009/calendar.ics";
+const refreshSeconds = 60; // alle 60 Sekunden aktualisieren
 
-// ==== ELEMENTE AUS HTML ====
 const timeEl = document.getElementById("time");
 const statusEl = document.getElementById("status");
 
-// ==== ZEIT ANZEIGEN ====
+async function fetchCalendar() {
+    try {
+        const response = await fetch(icsUrl);
+        const text = await response.text();
+        return text;
+    } catch (err) {
+        console.error("Fehler beim Laden des Kalenders:", err);
+        return null;
+    }
+}
+
+function parseICS(icsData) {
+    const events = [];
+    const lines = icsData.split("\n");
+    let currentEvent = null;
+
+    lines.forEach(line => {
+        line = line.trim();
+        if (line === "BEGIN:VEVENT") {
+            currentEvent = {};
+        } else if (line === "END:VEVENT") {
+            if (currentEvent) events.push(currentEvent);
+            currentEvent = null;
+        } else if (currentEvent) {
+            if (line.startsWith("DTSTART")) {
+                currentEvent.start = new Date(line.split(":")[1]);
+            } else if (line.startsWith("DTEND")) {
+                currentEvent.end = new Date(line.split(":")[1]);
+            } else if (line.startsWith("SUMMARY")) {
+                currentEvent.summary = line.split(":")[1];
+            }
+        }
+    });
+
+    return events;
+}
+
+function getRoomStatus(events) {
+    const now = new Date();
+    for (const event of events) {
+        if (now >= event.start && now <= event.end) {
+            return `Belegt: ${event.summary}`;
+        }
+    }
+    return "Frei";
+}
+
 function updateTime() {
     const now = new Date();
     const hours = String(now.getHours()).padStart(2, "0");
@@ -16,58 +60,20 @@ function updateTime() {
     timeEl.textContent = `${hours}:${minutes}:${seconds}`;
 }
 
-// ==== KALENDER DATEN ABRUFEN ====
-async function fetchCalendar() {
-    try {
-        const response = await fetch(ICS_URL);
-        const text = await response.text();
-        return text;
-    } catch (error) {
-        console.error("Fehler beim Abrufen des Kalenders:", error);
-        return null;
-    }
-}
-
-// ==== ICS PARSEN UND STATUS BESTIMMEN ====
-function parseICS(icsText) {
-    if (!icsText) return "Fehler beim Laden";
-
-    const lines = icsText.split("\n");
-    const now = new Date();
-
-    for (let i = 0; i < lines.length; i++) {
-        if (lines[i].startsWith("BEGIN:VEVENT")) {
-            let start = null;
-            let end = null;
-
-            while (!lines[i].startsWith("END:VEVENT")) {
-                if (lines[i].startsWith("DTSTART")) {
-                    start = new Date(lines[i].split(":")[1]);
-                }
-                if (lines[i].startsWith("DTEND")) {
-                    end = new Date(lines[i].split(":")[1]);
-                }
-                i++;
-            }
-
-            if (start && end && now >= start && now <= end) {
-                return "Raum belegt";
-            }
-        }
-    }
-
-    return "Raum frei";
-}
-
-// ==== STATUS AKTUALISIEREN ====
 async function updateStatus() {
-    const icsText = await fetchCalendar();
-    const status = parseICS(icsText);
-    statusEl.textContent = status;
+    updateTime();
+    const icsData = await fetchCalendar();
+    if (icsData) {
+        const events = parseICS(icsData);
+        const status = getRoomStatus(events);
+        statusEl.textContent = status;
+    } else {
+        statusEl.textContent = "Kalender nicht verfügbar";
+    }
 }
 
-// ==== AUTOMATISCHE UPDATES ====
-updateTime();
+// Initiales Update
 updateStatus();
-setInterval(updateTime, 1000); // Uhrzeit jede Sekunde aktualisieren
-setInterval(updateStatus, REFRESH_SECONDS * 1000); // Status alle REFRESH_SECONDS aktualisieren
+
+// Automatisch jede Minute aktualisieren
+setInterval(updateStatus, refreshSeconds * 1000);
