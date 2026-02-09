@@ -1,64 +1,73 @@
-const icsUrl = "https://outlook.office365.com/owa/calendar/459e06915f20497b98e14dd8acc3693d@wela-suppen.de/fd3f98695c874fc58b0316b732d27f2412740084984941561009/calendar.ics";
-const roomName = "Raum Biergarten";
-const refreshSeconds = 60;
+// ==== KONFIGURATION ====
+const ICS_URL = "https://outlook.office365.com/owa/calendar/459e06915f20497b98e14dd8acc3693d@wela-suppen.de/fd3f98695c874fc58b0316b732d27f2412740084984941561009/calendar.ics";
+const ROOM_NAME = "Raum Biergarten";
+const REFRESH_SECONDS = 60;
 
-// Uhrzeit aktualisieren
+// ==== ELEMENTE AUS HTML ====
+const timeEl = document.getElementById("time");
+const statusEl = document.getElementById("status");
+
+// ==== ZEIT ANZEIGEN ====
 function updateTime() {
     const now = new Date();
-    const timeElement = document.getElementById("time");
-    timeElement.textContent = now.toLocaleTimeString();
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    const seconds = String(now.getSeconds()).padStart(2, "0");
+    timeEl.textContent = `${hours}:${minutes}:${seconds}`;
 }
 
-// Raumstatus aus ICS-Datei prüfen
-async function updateRoomStatus() {
-    const statusElement = document.getElementById("status");
+// ==== KALENDER DATEN ABRUFEN ====
+async function fetchCalendar() {
     try {
-        const response = await fetch(icsUrl);
-        const icsText = await response.text();
-
-        const now = new Date();
-        let occupied = false;
-
-        // ICS-Datei parsen
-        const events = icsText.split("BEGIN:VEVENT");
-        for (let event of events) {
-            const dtStartMatch = event.match(/DTSTART.*:(\d+)/);
-            const dtEndMatch = event.match(/DTEND.*:(\d+)/);
-            if (dtStartMatch && dtEndMatch) {
-                const start = parseICSTime(dtStartMatch[1]);
-                const end = parseICSTime(dtEndMatch[1]);
-                if (now >= start && now <= end) {
-                    occupied = true;
-                    break;
-                }
-            }
-        }
-
-        statusElement.textContent = occupied ? "Raum belegt" : "Raum frei";
-        statusElement.style.color = occupied ? "red" : "green";
-
-    } catch (err) {
-        statusElement.textContent = "Fehler beim Laden";
-        statusElement.style.color = "orange";
-        console.error(err);
+        const response = await fetch(ICS_URL);
+        const text = await response.text();
+        return text;
+    } catch (error) {
+        console.error("Fehler beim Abrufen des Kalenders:", error);
+        return null;
     }
 }
 
-// Hilfsfunktion: ICS-Zeit in Date umwandeln
-function parseICSTime(icsTime) {
-    const year = parseInt(icsTime.slice(0, 4));
-    const month = parseInt(icsTime.slice(4, 6)) - 1;
-    const day = parseInt(icsTime.slice(6, 8));
-    const hour = parseInt(icsTime.slice(9, 11));
-    const minute = parseInt(icsTime.slice(11, 13));
-    const second = parseInt(icsTime.slice(13, 15));
-    return new Date(year, month, day, hour, minute, second);
+// ==== ICS PARSEN UND STATUS BESTIMMEN ====
+function parseICS(icsText) {
+    if (!icsText) return "Fehler beim Laden";
+
+    const lines = icsText.split("\n");
+    const now = new Date();
+
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith("BEGIN:VEVENT")) {
+            let start = null;
+            let end = null;
+
+            while (!lines[i].startsWith("END:VEVENT")) {
+                if (lines[i].startsWith("DTSTART")) {
+                    start = new Date(lines[i].split(":")[1]);
+                }
+                if (lines[i].startsWith("DTEND")) {
+                    end = new Date(lines[i].split(":")[1]);
+                }
+                i++;
+            }
+
+            if (start && end && now >= start && now <= end) {
+                return "Raum belegt";
+            }
+        }
+    }
+
+    return "Raum frei";
 }
 
-// Interval starten
+// ==== STATUS AKTUALISIEREN ====
+async function updateStatus() {
+    const icsText = await fetchCalendar();
+    const status = parseICS(icsText);
+    statusEl.textContent = status;
+}
+
+// ==== AUTOMATISCHE UPDATES ====
 updateTime();
-updateRoomStatus();
-setInterval(() => {
-    updateTime();
-    updateRoomStatus();
-}, refreshSeconds * 1000);
+updateStatus();
+setInterval(updateTime, 1000); // Uhrzeit jede Sekunde aktualisieren
+setInterval(updateStatus, REFRESH_SECONDS * 1000); // Status alle REFRESH_SECONDS aktualisieren
